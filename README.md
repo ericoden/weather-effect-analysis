@@ -3,3 +3,5 @@
 Using the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm  database, this analysis seeks to identify the weather events with the greatest effect on public health and the economy.
 
 The compiled output of the R markdown file can be viewed [here](https://rpubs.com/drsnowbunny1234/796808).
+
+This work was my submission for the Reproducible Research course project, part of the Johns Hopkins Coursera Data Science Specialization.
