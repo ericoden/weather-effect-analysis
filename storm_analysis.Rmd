@@ -1,0 +1,136 @@
+---
+title: "Investigation of Weather Events with Greatest Public Health and Economic Effects"
+author: "Eric Oden"
+date: "8/5/2021"
+output: html_document
+---
+# Synopsis
+
+Using the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm 
+database, we seek to identify the weather events with the greatest effect on
+public health and the economy. The NOAA database tracks major weather events in 
+the United States from the years 1950 to 2011, and includes the number of 
+injuries/fatalities and costs due to property/crop damage for each. Summing 
+these quantities across the data set, we find tornadoes are by far the most
+consequential weather events with regards to both public health and the economy.
+
+# Data Processing
+
+Import the relevant libraries:
+
+```{r,message=FALSE}
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(lubridate)
+```
+
+The data is loaded into **R** by downloading the publicly available [data set](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2), 
+and converted into a data.frame object
+```{r import, cache=TRUE}
+url <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2'
+download.file(url = url, destfile = 'data/storm_data.csv')
+df <- read.csv(file = 'data/storm_data.csv')
+```
+
+The data.frame has columns named EVTYPE, FATALITIES, and INJURIES 
+corresponding to the weather event, the associated number of fatalities, and
+associated number of injuries, respectively. There are also the columns PROPDMG,
+PROPDMGEXP, CROPDMG, and CROPDMGEXP which give the costs due to property and 
+crop damage. PROPDMG gives the mantissa, and PROPDMGEXP gives the exponent for 
+the property damage costs due to the event in USD.
+
+Since we are interested in identifying the weather events causing the most
+health/economic damage, we filter out the rows with zero values in each column.
+
+```{r subset, cache=TRUE}
+df <- filter(df, PROPDMG > 0 | CROPDMG > 0 | FATALITIES > 0 | INJURIES > 0) 
+```
+
+
+To observe the public health effects, we create a new data.frame which 
+contains the total fatalities and total injuries for each weather event. This is 
+done using a sequence of **dplyr** functions which extract only the relevant 
+columns (i.e., EVTYPE, FATALITIES, and INJURIES) from the original data.frame, 
+group the rows by the weather event, and then sum over each group of rows. The 
+new data.frame is then sorted by total injuries plus total fatalities in 
+decreasing order.
+
+```{r process_health, message=FALSE, cache=TRUE}
+health_summary <- df %>% 
+        select(EVTYPE, FATALITIES, INJURIES) %>% 
+        group_by(EVTYPE) %>% 
+        summarize(TOTAL_INJURIES = sum(INJURIES),
+                  TOTAL_FATALITIES = sum(FATALITIES)) %>% 
+        arrange(desc(TOTAL_FATALITIES + TOTAL_INJURIES))
+```
+
+To observe economic effects, the process is repeated, extracting instead the 
+costs associated with property and crop damage.
+
+We must calculate the true costs by using the information in the PROPDMG,
+PROPDMGEXP, CROPDMG, and CROPDMGEXP columns.
+
+```{r calc_costs}
+key <- c("K" = 10^3, "M" = 10^6, "B" = 10^9)
+df2 <- df %>% 
+    select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+    filter(PROPDMG > 0 | CROPDMG > 0) %>% 
+    mutate(PROPCOST = as.numeric(PROPDMG * key[PROPDMGEXP])) %>% 
+    mutate(CROPCOST = as.numeric(CROPDMG * key[CROPDMGEXP]))
+```
+
+```{r process_econ}
+econ_summary <- df2 %>% 
+    select(EVTYPE, PROPCOST, CROPCOST) %>% 
+    group_by(EVTYPE) %>% 
+    summarize(TOTAL_PROPCOST = sum(PROPCOST, na.rm = TRUE),
+              TOTAL_CROPCOST = sum(CROPCOST, na.rm = TRUE)) %>% 
+    arrange(desc(TOTAL_PROPCOST + TOTAL_CROPCOST))
+```
+
+# Results
+
+We plot a clustered bar chart showing fatalities and injuries associated with 
+the ten weather events with the greatest sum of the two variables.
+
+```{r plot_health, message=FALSE}
+long_health_summary <- melt(health_summary[0:10,], id.vars = "EVTYPE") 
+ggplot(long_health_summary, 
+       aes(x = reorder(EVTYPE, -value), y = value, fill=variable)) +
+    geom_bar(stat='identity', position = "dodge") +
+    xlab("Weather Event") +
+    ylab("Total Injuries/Fatalities") +
+    ggtitle("Weather Events Most Harmful to Public Health") +
+    theme(axis.text.x = element_text(angle=45, hjust=1)) +
+    theme(legend.title = element_blank()) +
+    scale_fill_discrete(breaks=c("TOTAL_INJURIES", "TOTAL_FATALITIES"),
+                        labels=c("Total Injuries", "Total Fatalities")) +
+    labs(caption = "Total fatalities and Injuries for the ten weather events
+         with the greatest sum of the two variables. We observe tornadoes
+         cause the greatest number of injuries by far, while fatalities have 
+         greater spread.")
+```
+
+We do the same for the economic effects, showing the property damage and crop 
+damage for the ten weather events with the greatest sum of the two variables.
+
+```{r plot_econ, message=FALSE}
+long_econ_summary <- melt(econ_summary[0:10,], id.vars = "EVTYPE") 
+ggplot(long_econ_summary, 
+       aes(x = reorder(EVTYPE, -value), y = value/10^9, fill=variable)) +
+    geom_bar(stat='identity', position = "dodge") +
+    xlab("Weather Event") +
+    ylab("Property/Crop Damage Costs (Billions USD)") +
+    ggtitle("Weather Events with Greatest Economic Consequences") +
+    theme(axis.text.x = element_text(angle=45, hjust=1)) +
+    theme(legend.title = element_blank()) +
+    scale_fill_discrete(breaks=c("TOTAL_PROPCOST", "TOTAL_CROPCOST"),
+                        labels=c("Property Damage Costs", "Crop Damage Costs")) +
+    labs(caption = "Total costs due to property and crop damage for the ten 
+         weather events with the greatest sum of the two variables. We observe
+         floods cause the most property damage.")
+```
+
+There is a clear indication that **tornadoes** have the greatest effect on 
+public health, and **floods** have the greatest effect on the economy.
